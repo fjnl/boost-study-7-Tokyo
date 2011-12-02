@@ -1,0 +1,775 @@
+\documentclass[12pt,xgraphicx=dvips,xcolor=dvips]{beamer}
+% pdfの栞の字化けを防ぐ
+% \AtBeginDvi{\special{pdf:tounicode EUC-UCS2}}
+% テーマ
+\usepackage{graphicx}
+\usetheme{Warsaw}
+% navi. symbolsは目立たないが，dvipdfmxを使うと機能しないので非表示に
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pstricks}
+% フォントはお好みで
+\usepackage{txfonts}
+\mathversion{bold}
+\renewcommand{\familydefault}{\sfdefault}
+\renewcommand{\kanjifamilydefault}{\gtdefault}
+\setbeamerfont{title}{size=\large,series=\bfseries}
+\setbeamerfont{frametitle}{size=\large,series=\bfseries}
+\setbeamertemplate{frametitle}[default][center]
+\usefonttheme{professionalfonts}
+\usecolortheme{beaver}
+%
+
+%%
+\makeatletter
+\renewcommand\verbatim@font{\footnotesize\ttfamily}
+\makeatother
+\setbeamerfont{footline}{size=\small,series=\bfseries}
+\setbeamercolor{footline}{fg=black,bg=black}
+\setbeamersize{text margin left=1zw, text margin right=1zw}
+\setbeamertemplate{items}[default]
+\setbeamercolor{block title example}{bg=darkred!60!black,fg=white}
+\setbeamercolor{block body example}{bg=gray!10!white}
+%%
+
+\title{Boost.勉強会 \#7\\clangで入門 解析戦略ー}
+\author{藤田 典久: {\tt @fjnli, id:fjnl}}
+\date{2011/12/03}
+
+\begin{document}
+
+\frame{\titlepage}
+
+\begin{frame}
+  \frametitle{Agenda}
+
+  \begin{enumerate}
+    \setlength{\itemsep}{1.5zh}
+    \item About LLVM and clang
+    \item About libclang
+    \item 定義元を調べるツールを作ってみる
+    \item 補足, $+\alpha$
+  \end{enumerate}
+\end{frame}
+
+\begin{frame}
+  \frametitle{自己紹介}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item 某大学で院生やってます {\scriptsize 進路どうしよ}
+    \item 研究はHPCとかGPGPUとか
+    \item Twitter $\rightarrow$ {\tt @fjnli}
+    \item はてな $\rightarrow$ {\tt id:fjnl}
+      \begin{itemize}
+        \item C++11 Advent Calender 6日目
+        \item Boost Advent Calender 7日目
+      \end{itemize}
+  \end{itemize}
+
+  \rput[c](9,1){\fbox{\includegraphics{icon.eps}}}
+\end{frame}
+
+\begin{frame}
+  \frametitle{LLVM}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item \alert{L}ow \alert{L}evel \alert{V}irtual \alert{M}achine
+    \item {\tt http://llvm.org/}
+    \item 特定の言語，アーキテクチャに依存しない中間言語
+    \item 言語
+      \begin{itemize}
+        \item clang, llvm-gcc (C, C++, Obj-C)
+        \item ghc (Haskell)
+        \item MacRuby (Ruby) など
+      \end{itemize}
+    \item アーキテクチャ
+      \begin{itemize}
+        \item x86, x86\_64
+        \item PowerPC
+        \item ARM など
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{clang}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item {\tt http://clang.llvm.org/}
+    \item C + Obj-C + C++ コンパイラ期待の\alert{新星}
+    \item LLVMをバックエンドとしている
+    \item たぶん ``クラン'' と読む (×クラング)
+    \item BSD License
+    \item Apple (Mac OS/iOS)とかFreeBSDとか
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{}
+
+  \begin{exampleblock}{C++}
+\begin{semiverbatim}
+int fib(int n) \{
+  if (n == 0) return 0;
+  if (n == 1) return 1;
+  return fib(n - 1) + fib(n - 2);
+\}
+\end{semiverbatim}
+  \end{exampleblock}
+
+  \begin{exampleblock}{LLVM Byte Code}
+\begin{semiverbatim}
+define i32 @fib(i32 %n) nounwind ssp \{
+  %1 = alloca i32, align 4
+  %2 = alloca i32, align 4
+  store i32 %n, i32* %2, align 4
+  %3 = load i32* %2, align 4
+  %4 = icmp eq i32 %3, 0
+  br i1 %4, label %5, label %6
+  (略)
+\}
+\end{semiverbatim}
+  \end{exampleblock}
+
+\vspace{-1zh}
+\begin{pspicture}(0,0)
+  \psline[linecolor=red,linewidth=2pt]{->}(7,6)(8,6)(8,3)(7,3)
+  \rput[l](8.1,5.5){\color{red} clang}
+
+  \psline[linewidth=2pt]{->}(7,2)(8,2)(8,-.5)
+  \rput[l](8.1,1.5){LLVM}
+\end{pspicture}
+
+\end{frame}
+
+\begin{frame}
+  \frametitle{Why?}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item gccのライセンスが GPLv2 $\rightarrow$ GPLv3 になってしまった
+    \item 最後のGPLv2のgccが4.2.1
+    \item 一部のシステムではgccの更新をやめてしまった
+      \begin{itemize}
+        \item MacOS
+        \item *BSD
+      \end{itemize}
+    \item 注: バンドルされてないだけで，自分で入れれば最新gccは使える
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{Why?}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item 長らく代替コンパイラが不在だった
+    \item Apple $\rightarrow$ XCode4からデフォルト
+    \item FreeBSD $\rightarrow$ 徐々にclangのサポートを拡大中
+      \begin{itemize}
+        \item FreeBSD 9にマージされた
+        \item 現在 FreeBSD 9.0-RELEASE RC2
+        \item デフォルトはまだgcc
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \begin{center}
+    さて，ここからはclangのお話…ではありません
+  \end{center}
+
+  \pause
+
+  \begin{center}
+    libclangがメインです
+  \end{center}
+
+  \pause
+
+  \begin{center}
+    あとBoostは出てきません
+  \end{center}
+\end{frame}
+
+\begin{frame}
+  \frametitle{libclang}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item clangのバックエンドがライブラリ化されたもの
+      \begin{itemize}
+        \item 注: 僕が勝手に付けた名前です
+      \end{itemize}
+    \item 何ができるの? $\rightarrow$ C++コードの解析
+      \begin{itemize}
+        \item 抽象構文木 (Abstract Syntax Tree; AST) の取得
+        \item clang static analyzer
+        \item {\tt http://clang-analyzer.llvm.org/}
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}
+  \frametitle{libclang}
+
+  \begin{description}[Cons.]
+    \setlength{\itemsep}{1.5zh}
+    \item[Pros.]
+      \begin{itemize}
+        \setlength{\itemsep}{0.75zh}
+        \item 開発が非常に活発
+        \item コンパイラのコードをそのまま流用できる
+        \item C++11に対応しつつある
+      \end{itemize}
+    \item[Cons.]
+      \begin{itemize}
+        \setlength{\itemsep}{0.75zh}
+        \item Not user friendly
+        \item 解析のみを欲するにはやや巨大
+      \end{itemize}
+  \end{description}
+\end{frame}
+
+\begin{frame}
+  \frametitle{実験環境}
+
+  \begin{columns}
+
+    \begin{column}[t]{.40\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+        \item LLVM 2.9
+        \item clang 2.9
+        \item gcc 4.6.1
+        \item C++ 11
+      \end{itemize}
+    \end{column}
+
+    \pause
+
+    \begin{column}[t]{.40\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+        \item 11月30日にLLVM 3.0および
+        \item clang 3.0が出てるはず
+        \item Windows環境で開発しないのでわかりません．ごめんなさい．
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+%  \psgrid[gridcolor=gray,griddots=5,subgriddots=4](0,0)(12,9)
+%  \pscurve{-}(6.6,3.6)(6.4,2.6)(6.6,1.6)
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{Target}
+
+  \begin{semiverbatim}
+    $ ./where in.cpp f
+      in.cpp:2:5
+
+    $ ./where in.cpp g
+      in.cpp:6:6
+  \end{semiverbatim}
+
+  \begin{exampleblock}{in.cpp}
+    \begin{semiverbatim}
+1: #include <iostream>
+2: int f(int x, int y) \{
+3:   return x + y;
+4: \}
+5:
+6: void g() \{
+7:  std::cout << ``g()'' << std::endl;
+8: \}
+    \end{semiverbatim}
+  \end{exampleblock}
+\end{frame}
+
+\begin{frame}
+  \frametitle{コンパイル方法}
+
+  \setbeamertemplate{items}{}
+
+  \begin{columns}
+    \begin{column}{.55\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+      \item {\tt gcc -o where where.cpp} $\backslash$
+        %    \item {\tt -fno-rtti} $\backslash$
+        %    \item {\tt -fno-exceptions} $\backslash$
+      \item {\tt -D\_\_STDC\_CONSTANT\_MACROS} $\backslash$
+      \item {\tt -D\_\_STDC\_LIMIT\_MACROS} $\backslash$
+      \item libLLVM*.a libclang*.a
+      \end{itemize}
+    \end{column}
+
+    \begin{column}[t]{.45\textwidth}
+    \end{column}
+  \end{columns}
+
+  \setbeamertemplate{items}{default}
+\end{frame}
+
+\begin{frame}
+  \frametitle{コンパイル方法}
+
+  \setbeamertemplate{items}{}
+
+  \begin{columns}
+    \begin{column}{.55\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+      \item {\tt gcc -o where where.cpp} $\backslash$
+        %    \item {\tt -fno-rtti} $\backslash$
+        %    \item {\tt -fno-exceptions} $\backslash$
+      \item {\tt -D\_\_STDC\_CONSTANT\_MACROS} $\backslash$
+      \item {\tt -D\_\_STDC\_LIMIT\_MACROS} $\backslash$
+      \item libLLVM*.a libclang*.a
+      \end{itemize}
+    \end{column}
+
+    \begin{column}[t]{.45\textwidth}
+      \vspace{-2zh}
+      \begin{exampleblock}{\scriptsize \_\_STDC\_CONSTANT\_MACROS}
+        {\tt INT8\_C}, {\tt INT16\_C}, {\tt INT32\_C}, {\tt INT64\_C}, ...
+      \end{exampleblock}
+    \end{column}
+  \end{columns}
+
+  \psline[linewidth=1pt,linecolor=darkred!60!black]{-}(0.6,2.2)(6.6,2.2)
+
+  \setbeamertemplate{items}{default}
+\end{frame}
+
+\begin{frame}
+  \frametitle{コンパイル方法}
+
+  \setbeamertemplate{items}{}
+
+  \begin{columns}
+    \begin{column}{.55\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+      \item {\tt gcc -o where where.cpp} $\backslash$
+        %    \item {\tt -fno-rtti} $\backslash$
+        %    \item {\tt -fno-exceptions} $\backslash$
+      \item {\tt -D\_\_STDC\_CONSTANT\_MACROS} $\backslash$
+      \item {\tt -D\_\_STDC\_LIMIT\_MACROS} $\backslash$
+      \item libLLVM*.a libclang*.a
+      \end{itemize}
+    \end{column}
+
+    \begin{column}[t]{.45\textwidth}
+      \vspace{1.0zh}
+      \begin{exampleblock}{\scriptsize \_\_STDC\_LIMIT\_MACROS}
+        {\tt INT8\_MAX}, {\tt INT8\_MIN}, {\tt INT16\_MAX}, {\tt INT16\_MIN} ...
+      \end{exampleblock}
+    \end{column}
+  \end{columns}
+
+  \psline[linewidth=1pt,linecolor=darkred!60!black]{-}(0.6,1.5)(6.6,1.5)
+
+  \setbeamertemplate{items}{default}
+\end{frame}
+
+\begin{frame}
+  \frametitle{コンパイル方法}
+
+  \setbeamertemplate{items}{}
+
+  \begin{columns}
+    \begin{column}{.55\textwidth}
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+      \item {\tt gcc -o where where.cpp} $\backslash$
+        %    \item {\tt -fno-rtti} $\backslash$
+        %    \item {\tt -fno-exceptions} $\backslash$
+      \item {\tt -D\_\_STDC\_CONSTANT\_MACROS} $\backslash$
+      \item {\tt -D\_\_STDC\_LIMIT\_MACROS} $\backslash$
+      \item libLLVM*.a libclang*.a
+      \end{itemize}
+    \end{column}
+
+    \begin{column}[t]{.45\textwidth}
+      \vspace{-2zh}
+      \begin{exampleblock}{\scriptsize lib*.a}
+        libLLVMAnalysis.a, libLLVMArchive.a libLLVMAsmParser.a, ... \\
+        libclang.a libclangAST.a libclangAnalysis.a libclangBasic.a, ...
+      \end{exampleblock}
+    \end{column}
+  \end{columns}
+
+  \psline[linewidth=1pt,linecolor=darkred!60!black]{-}(0.6,1.2)(6.1,1.2)(6.1,3.5)(6.6,3.5)
+
+  \setbeamertemplate{items}{default}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{where.cpp:\#include}
+  \begin{semiverbatim}
+#include <clang/AST/ASTContext.h>
+#include <clang/AST/ASTConsumer.h>
+#include <clang/AST/Decl.h>
+#include <clang/AST/DeclGroup.h>
+#include <clang/Basic/TargetInfo.h>
+#include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/CompilerInvocation.h>
+#include <clang/Parse/ParseAST.h>
+#include <clang/Lex/Preprocessor.h>
+    \end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{where.cpp:main}
+  \begin{semiverbatim}
+int main(int argc, char** argv) \{
+  clang::CompilerInstance compiler;
+  compiler.createDiagnostics(argc - 1, argv);
+  auto& diag = compiler.getDiagnostics();
+  auto& invocation = compiler.getInvocation();
+
+  clang::CompilerInvocation::CreateFromArgs(
+    invocation, argv + 1, argv + argc - 1, diag);
+  compiler.setTarget(clang::TargetInfo::CreateTargetInfo(
+    diag, compiler.getTargetOpts()));
+
+  compiler.createFileManager();
+  compiler.createSourceManager(compiler.getFileManager());
+  compiler.createPreprocessor();
+  compiler.createASTContext();
+  compiler.setASTConsumer(new consumer(argv[argc - 1]));
+  compiler.createSema(false, nullptr);
+  (続)
+  \end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{where.cpp:main}
+  \begin{semiverbatim}
+  (続)
+  auto& pp = compiler.getPreprocessor();
+  pp.getBuiltinInfo().InitializeBuiltins(
+      pp.getIdentifierTable(), pp.getLangOptions());
+
+  auto& inputs = compiler.getFrontendOpts().Inputs;
+  if (inputs.size() > 0) \{
+    compiler.InitializeSourceManager(inputs[0].second);
+    clang::ParseAST(
+      pp,
+      &compiler.getASTConsumer(),
+      compiler.getASTContext()
+    );
+  \}
+  return 0;
+\}
+  \end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{clang::CompilerInstance}
+  \begin{semiverbatim}
+int main(int argc, char** argv) \{
+  clang::CompilerInstance compiler;
+\color{gray}{  compiler.createDiagnostics(argc - 1, argv);
+  auto& diag = compiler.getDiagnostics();
+  auto& invocation = compiler.getInvocation();
+
+  clang::CompilerInvocation::CreateFromArgs(
+    invocation, argv + 1, argv + argc - 1, diag);
+  compiler.setTarget(clang::TargetInfo::CreateTargetInfo(
+    diag, compiler.getTargetOpts()));
+
+  compiler.createFileManager();
+  compiler.createSourceManager(compiler.getFileManager());
+  compiler.createPreprocessor();
+  compiler.createASTContext();
+  compiler.setASTConsumer(new consumer(argv[argc - 1]));
+  compiler.createSema(false, nullptr);}
+  (続)
+  \end{semiverbatim}
+
+
+%  \psgrid[gridcolor=gray,griddots=5,subgriddots=4](0,0)(12,9)
+
+  \psframe[linewidth=0pt,fillcolor=gray!10!white,fillstyle=solid,framearc=.2](4.8,7.1)(11.5,6.3)
+%%  \psline[linewidth=2pt,linecolor=darkred!60!black]{-}(0.3,7.7)(6.5,7.7)
+  \psline[linewidth=2pt,linecolor=darkred!60!black]{*->}(4.8,7.1)(4,7.1)(3.7,7.6)
+  \rput[lb](5.0,6.5){clangコンパイラ本体みたいなもの}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{CompilerInvocation::CreateFromArgs}
+  \begin{semiverbatim}
+\color{gray}{int main(int argc, char** argv) \{
+  clang::CompilerInstance compiler;
+  compiler.createDiagnostics(argc - 1, argv);
+  auto& diag = compiler.getDiagnostics();
+  auto& invocation = compiler.getInvocation();}
+
+\color{black}{  clang::CompilerInvocation::CreateFromArgs(
+    invocation, argv + 1, argv + argc - 1, diag);}
+\color{gray}{  compiler.setTarget(clang::TargetInfo::CreateTargetInfo(
+    diag, compiler.getTargetOpts()));
+
+  compiler.createFileManager();
+  compiler.createSourceManager(compiler.getFileManager());
+  compiler.createPreprocessor();
+  compiler.createASTContext();
+  compiler.setASTConsumer(new consumer(argv[argc - 1]));
+  compiler.createSema(false, nullptr);}
+  (続)
+  \end{semiverbatim}
+
+
+%  \psgrid[gridcolor=gray,griddots=5,subgriddots=4](0,0)(12,9)
+
+  \psframe[linewidth=0pt,fillcolor=gray!10!white,fillstyle=solid,framearc=.2](3,5.1)(9,2)
+%  \psline[linewidth=2pt,linecolor=darkred!60!black]{-}(0.3,7.7)(6.5,7.7)
+  \psline[linewidth=2pt,linecolor=darkred!60!black]{*->}(4.8,5.1)(5.0,5.4)(5.4,5.6)
+  \rput[lb](3.1,4.6){clang本体の引数解析に}
+  \rput[lb](3.1,4.2){丸投げする．}
+  \rput[lb](3.1,3.8){楽だが不便でもある．}
+  \rput[lb](3.1,3.0){({\tt -D -I -U}といったフラグ}
+  \rput[lb](3.1,2.6){を認識させる)}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{CompilerInvocation::CreateFromArgs}
+
+  \begin{semiverbatim}
+clang::CompilerInvocation::CreateFromArgs(
+  invocation, argv + 1, argv + argc - 1, diag);
+  \end{semiverbatim}
+
+  ※ {\tt argc == 1}の時まずいが今回は気にしない方向で．
+  \vspace{1zh}
+
+  \begin{itemize}
+    \setlength{\itemsep}{1.5zh}
+    \item 馴染みあるオプションを丸投げできる
+      \setbeamertemplate{items}[]
+      \begin{itemize}
+        \item {\tt -I\$HOME/boost}
+        \item {\tt -DNDEBUG}
+        \item {\tt -UFOOBAR} ...
+      \end{itemize}
+      \setbeamertemplate{items}[default]
+    \item アプリ独自のフラグを渡すのが手間 (see: argv + argc - 1)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{CompilerInvocation::CreateFromArgs}
+  \begin{semiverbatim}
+\color{gray}int main(int argc, char** argv) \{
+  clang::CompilerInstance compiler;
+\color{black}  compiler.createDiagnostics(argc - 1, argv);
+  auto& diag = compiler.getDiagnostics();
+  auto& invocation = compiler.getInvocation();
+
+\color{gray}  clang::CompilerInvocation::CreateFromArgs(
+    invocation, argv + 1, argv + argc - 1, diag);
+\color{black}  compiler.setTarget(clang::TargetInfo::CreateTargetInfo(
+    diag, compiler.getTargetOpts()));
+
+  compiler.createFileManager();
+  compiler.createSourceManager(compiler.getFileManager());
+  compiler.createPreprocessor();
+  compiler.createASTContext();
+  compiler.setASTConsumer(new consumer(argv[argc - 1]));
+  compiler.createSema(false, nullptr);
+  (続)
+  \end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{InitializeBuiltins}
+  \begin{semiverbatim}
+  (続)
+  auto& pp = compiler.getPreprocessor();
+  pp.getBuiltinInfo().InitializeBuiltins(
+      pp.getIdentifierTable(), pp.getLangOptions());
+
+  \color{gray}auto& inputs = compiler.getFrontendOpts().Inputs;
+  if (inputs.size() > 0) \{
+    compiler.InitializeSourceManager(inputs[0].second);
+    clang::ParseAST(
+      pp,
+      &compiler.getASTConsumer(),
+      compiler.getASTContext()
+    );
+  \}
+  return 0;
+\}
+  \end{semiverbatim}
+
+  \psframe[linewidth=0pt,fillcolor=gray!10!white,fillstyle=solid,framearc=.2](3,6)(8,4)
+  \rput[lb](3.1,5.5){・{\tt \_\_builtin\_strcmp}}
+  \rput[lb](3.1,5.1){・{\tt \_\_builtin\_sin}}
+  \rput[lb](3.1,4.7){・{\tt \_\_builtin\_cos}}
+  \rput[lb](3.1,4.3){・{\tt \_\_builtin\_sqrt} ...}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{clang::ParseAST}
+  \begin{semiverbatim}
+  (続)
+  \color{gray}auto& pp = compiler.getPreprocessor();
+  pp.getBuiltinInfo().InitializeBuiltins(
+      pp.getIdentifierTable(), pp.getLangOptions());
+
+  auto& inputs = compiler.getFrontendOpts().Inputs;
+  if (inputs.size() > 0) \{
+    \color{black}compiler.InitializeSourceManager(inputs[0].second);
+    clang::ParseAST(
+      pp,
+      &compiler.getASTConsumer(),
+      compiler.getASTContext()
+    );
+  \color{gray}\}
+  return 0;
+\}
+  \end{semiverbatim}
+
+  \psframe[linewidth=0pt,fillcolor=gray!10!white,fillstyle=solid,framearc=.2](1.3,2)(10,1)
+  \rput[lb](1.5,1.3){読込$\rightarrow$PP$\rightarrow$解析(AST)$\rightarrow$AST Consumer}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{consumer}
+
+  \begin{semiverbatim}struct consumer : clang::ASTConsumer \{
+  explicit
+  consumer(std::string const& target);
+  virtual
+  void Initialize(clang::ASTContext& ctx) /*override*/;
+  virtual
+  void HandleTopLevelDecl(clang::DeclGroupRef decls) /*override*/;
+private:
+  void handle_functiondecl(clang::FunctionDecl const* fd) const;
+
+  std::string target_;
+  clang::ASTContext* ctx_;
+\};\end{semiverbatim}
+
+  {\scriptsize
+    {\tt boost::optional<T\&>}のオーバヘッドが小さければなぁ
+  }
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{consumer::consumer, Initialize}
+
+  \begin{semiverbatim}\color{gray}struct consumer : clang::ASTConsumer \{
+  \color{black}explicit
+  consumer(std::string const& target)
+  : target_(target), ctx_(nullptr) \{
+  \}
+  virtual
+  void Initialize(clang::ASTContext& ctx) /*override*/ \{
+    ctx_ = &ctx;
+  \}
+  \color{gray}virtual
+  void HandleTopLevelDecl(clang::DeclGroupRef decls) /*override*/;
+private:
+  std::string target_;
+  clang::ASTContext* ctx_;
+\};\end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{consumer::HandleTopLevelDecl}
+
+  \begin{semiverbatim}\color{gray}struct consumer : clang::ASTConsumer \{
+  explicit
+  consumer(std::string const& target);
+  virtual
+  void Initialize(clang::ASTContext& ctx) /*override*/;
+  \color{black}virtual
+  void HandleTopLevelDecl(clang::DeclGroupRef decls) \{
+    for (auto& decl : decls)
+      if (auto const* fd =
+          llvm::dyn_cast<clang::FunctionDecl>(decl))
+        handle_functiondecl(fd);
+  \}
+\color{gray}private:
+  void handle_functiondecl(clang::FunctionDecl const* fd) const;
+
+  std::string target_;
+  clang::ASTContext* ctx_;
+\};\end{semiverbatim}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{consumer::handle\_functiondecl}
+
+  \begin{semiverbatim}\color{gray}struct consumer : clang::ASTConsumer \{
+  explicit
+  consumer(std::string const& target);
+  virtual
+  void Initialize(clang::ASTContext& ctx) /*override*/;
+  virtual
+  void HandleTopLevelDecl(clang::DeclGroupRef decls) /*override*/;
+private:
+  \color{black}void handle_functiondecl(clang::FunctionDecl const* fd) const \{
+    if (fd->getDeclName().getAsString() == target_) \{
+      auto const& range = fd->getSourceRange();
+      range.getBegin().print(
+        llvm::outs(), ctx_->getSourceManager());
+      llvm::outs() << '￥n';
+    \}
+  \}
+  \color{gray}std::string target_;
+  clang::ASTContext* ctx_;
+\};\end{semiverbatim}
+\end{frame}
+
+\begin{frame}
+  \begin{alertblock}{宣言, clang/AST/Decl*.h}
+    \begin{itemize}
+      \setlength{\itemsep}{0.5zh}
+      \item Decl
+      \item EnumDecl
+      \item FunctionDecl
+      \item TempladeDecl
+      \item TypeDecl ...
+    \end{itemize}
+  \end{alertblock}
+
+  \begin{alertblock}{文, clang/AST/Stmt*.h}
+    \begin{itemize}
+      \setlength{\itemsep}{0.5zh}
+      \item Stmt
+      \item IfStmt
+      \item DoStmt
+      \item ForStmt
+      \item ReturnStmt ...
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}
+  \begin{alertblock}{式, clang/AST/Expr*.h}
+    \begin{itemize}
+      \setlength{\itemsep}{0.5zh}
+      \item Expr
+      \item IntegerLiteralExpr
+      \item BinaryOperator
+      \item CallExpr
+      \item InitListExpr ...
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}
+  \psgrid(0,0)(12,9)
+\end{frame}
+
+\end{document}
