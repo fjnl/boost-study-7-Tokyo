@@ -16,8 +16,12 @@ struct consumer : clang::ASTConsumer {
 
     void HandleTopLevelDecl(clang::DeclGroupRef decls) {
         for (auto& decl : decls) {
+            llvm::errs() << ".\n";
             if (auto const* fd = llvm::dyn_cast<clang::FunctionDecl>(decl)) {
                 handle_functiondecl(fd);
+            }
+            if (llvm::dyn_cast<clang::NamespaceDecl>(decl)) {
+                llvm::errs() << "NS\n";
             }
         }
     }
@@ -28,6 +32,7 @@ struct consumer : clang::ASTConsumer {
 
 private:
     void handle_functiondecl(clang::FunctionDecl const* fd) const {
+        llvm::errs() << fd->getDeclName().getAsString() << '\n';
         if (fd->getDeclName().getAsString() == target_) {
             auto const& range = fd->getSourceRange();
             range.getBegin().print(llvm::outs(), ctx_->getSourceManager());

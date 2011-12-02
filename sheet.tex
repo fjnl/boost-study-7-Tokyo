@@ -45,6 +45,18 @@
 \begin{frame}
   \frametitle{Agenda}
 
+  \setbeamertemplate{items}{}
+  \begin{itemize}
+    \setlength{\itemsep}{0.5zh}
+    \item {\tt https://github.com/fjnl/\\boost-study-7-Tokyo/raw/master/sheet.pdf} \\
+    \item {\tt http://bit.ly/uCnZxE}
+  \end{itemize}
+  \setbeamertemplate{items}[default]
+
+  \vspace{1zh}
+  \hrule
+  \vspace{.5zh}
+
   \begin{enumerate}
     \setlength{\itemsep}{1.5zh}
     \item About LLVM and clang
@@ -56,6 +68,18 @@
 
 \begin{frame}
   \frametitle{自己紹介}
+
+  \setbeamertemplate{items}{}
+  \begin{itemize}
+    \setlength{\itemsep}{0.5zh}
+    \item {\tt https://github.com/fjnl/\\boost-study-7-Tokyo/raw/master/sheet.pdf} \\
+    \item {\tt http://bit.ly/uCnZxE}
+  \end{itemize}
+  \setbeamertemplate{items}[default]
+
+  \vspace{1zh}
+  \hrule
+  \vspace{.5zh}
 
   \begin{itemize}
     \setlength{\itemsep}{1.5zh}
@@ -69,7 +93,7 @@
       \end{itemize}
   \end{itemize}
 
-  \rput[c](9,1){\fbox{\includegraphics{icon.eps}}}
+  \rput[c](9,3){\fbox{\includegraphics{icon.eps}}}
 \end{frame}
 
 \begin{frame}
@@ -707,30 +731,6 @@ private:
 \};\end{semiverbatim}
 \end{frame}
 
-\begin{frame}[containsverbatim]
-  \frametitle{consumer::handle\_functiondecl}
-
-  \begin{semiverbatim}\color{gray}struct consumer : clang::ASTConsumer \{
-  explicit
-  consumer(std::string const& target);
-  virtual
-  void Initialize(clang::ASTContext& ctx) /*override*/;
-  virtual
-  void HandleTopLevelDecl(clang::DeclGroupRef decls) /*override*/;
-private:
-  \color{black}void handle_functiondecl(clang::FunctionDecl const* fd) const \{
-    if (fd->getDeclName().getAsString() == target_) \{
-      auto const& range = fd->getSourceRange();
-      range.getBegin().print(
-        llvm::outs(), ctx_->getSourceManager());
-      llvm::outs() << '￥n';
-    \}
-  \}
-  \color{gray}std::string target_;
-  clang::ASTContext* ctx_;
-\};\end{semiverbatim}
-\end{frame}
-
 \begin{frame}
   \begin{alertblock}{宣言, clang/AST/Decl*.h}
     \begin{itemize}
@@ -768,8 +768,112 @@ private:
   \end{alertblock}
 \end{frame}
 
-\begin{frame}
-  \psgrid(0,0)(12,9)
+\begin{frame}[containsverbatim]
+  \frametitle{consumer::handle\_functiondecl}
+
+  \begin{semiverbatim}\color{gray}struct consumer : clang::ASTConsumer \{
+  explicit
+  consumer(std::string const& target);
+  virtual
+  void Initialize(clang::ASTContext& ctx) /*override*/;
+  virtual
+  void HandleTopLevelDecl(clang::DeclGroupRef decls) /*override*/;
+private:
+  \color{black}void handle_functiondecl(clang::FunctionDecl const* fd) const \{
+    if (fd->getDeclName().getAsString() == target_) \{
+      auto const& range = fd->getSourceRange();
+      range.getBegin().print(
+        llvm::outs(), ctx_->getSourceManager());
+      llvm::outs() << '￥n';
+    \}
+  \}
+  \color{gray}std::string target_;
+  clang::ASTContext* ctx_;
+\};\end{semiverbatim}
 \end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{Eratta}
+
+  入力ソースにエラーがあると… 落ちます．
+
+  \begin{alertblock}{error}
+    \begin{semiverbatim}in.cpp:8:3: error: use of undeclared identifier 'a'
+      Stack dump:
+      0.	in.cpp:8:4: current parser token ';'
+      1.	in.cpp:6:10: parsing function body 'g'
+      2.	in.cpp:6:10: in compound statement ('{}')
+      zsh: segmentation fault  ./where in.cpp f\end{semiverbatim}
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{Eratta}
+
+  名前空間を解釈できません．
+
+  \begin{alertblock}{in2.cpp}
+\begin{semiverbatim}namespace ns \{
+  void f() \{\}
+\}\end{semiverbatim}
+  \end{alertblock}
+
+  \begin{alertblock}{shell}
+\begin{semiverbatim}\$ ./where in2.cpp f
+\$ ./where in2.cpp ns::f\end{semiverbatim}
+  \end{alertblock}
+
+  \vspace{.5zh}
+
+  $\rightarrow$ clang::NamespaceDecl を再帰的に処理しないといけない．
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{組込み AST Consumer}
+
+  \begin{itemize}
+    \item clang/Frontent/ASTConsumers.h
+      \begin{itemize}
+        \setlength{\itemsep}{1.5zh}
+        \item CreateASTPrinter
+        \item CreateASTDumper
+        \item CreateASTDumperXML
+        \item CreateASTViewer
+        \item CreateDeclContextPrinter
+      \end{itemize}
+  \end{itemize}
+
+  \vspace{.5zh}
+
+  {\small 手元の環境だとCreateASTDumperXMLが動かなかった…}
+\end{frame}
+
+\begin{frame}[containsverbatim]
+  \frametitle{clang::CreateASTDumper()}
+
+  \begin{semiverbatim}
+int f(int x, int y) (CompoundStmt 0x7f87e4917b00 
+                     <in.cpp:2:21, line:4:1>
+ (ReturnStmt 0x7f87e4917ae0 <line:3:3, col:14>
+  (BinaryOperator 0x7f87e4917ab8 <col:10, col:14> 'int' '+'
+   (ImplicitCastExpr 0x7f87e4917a88 <col:10>
+    'int' <LValueToRValue>
+    (DeclRefExpr 0x7f87e4917a38 <col:10> 'int'
+     lvalue ParmVar 0x7f87e49178c0 'x' 'int'))
+    (ImplicitCastExpr 0x7f87e4917aa0 <col:14>
+     'int' <LValueToRValue>
+     (DeclRefExpr 0x7f87e4917a60 <col:14> 'int'
+      lvalue ParmVar 0x7f87e4917920 'y' 'int')))))\end{semiverbatim}
+\end{frame}
+
+\begin{frame}
+  \begin{center}
+    {\LARGE\it Any Questions?}
+  \end{center}
+\end{frame}
+
+%%\begin{frame}
+%%  \psgrid(0,0)(12,9)
+%%\end{frame}
 
 \end{document}
